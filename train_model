@@ -1,0 +1,120 @@
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
+import os
+import PIL
+import PIL.Image
+
+data_dir = 'E:/scripts_python/test_keras/clasificador/categorias'
+
+image_size = (180, 180)
+batch_size = 32
+img_height = 180
+img_width = 180
+
+# dataset = tf.keras.utils.image_dataset_from_directory(
+#     'C:/Users/ankor/OneDrive/Escritorio/scripts_python/documentos', labels='inferred', label_mode='categorical',
+#     class_names=None, color_mode='rgb', batch_size=32, image_size=(32,
+#     32), shuffle=True, seed=None, validation_split=None, subset=None,
+#     interpolation='bilinear', follow_links=False,
+#     crop_to_aspect_ratio=False)
+
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+  data_dir,
+  validation_split=0.2,
+  subset="training",
+  seed=123,
+  image_size=(180, 180),
+  batch_size=batch_size)
+
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+  data_dir,
+  validation_split=0.2,
+  subset="validation",
+  seed=123,
+  image_size=(180, 180),
+  batch_size=batch_size)
+
+class_names = train_ds.class_names
+print("Categorias:" + str(class_names))
+
+# image_batch es un tensor de la forma (32, 180, 180, 3) .
+# Este es un lote de 32 imágenes de forma 180x180x3
+# (la última dimensión se refiere a los canales de color RGB). El label_batch es un tensor de la forma (32,)
+# , estas son las etiquetas correspondientes a las 32 imágenes.
+#
+# Puede llamar a .numpy() en cualquiera de estos tensores para convertirlos en numpy.ndarray .
+
+for image_batch, labels_batch in train_ds:
+  print(image_batch.shape)
+  print(labels_batch.shape)
+  break
+
+# Estandarizar los datos
+# Los valores del canal RGB están en el rango [0, 255] . Esto no es ideal para una red neuronal;
+# en general, debe buscar que sus valores de entrada sean pequeños.
+# Aquí, estandarizará los valores para que estén en el rango [0, 1] usando tf.keras.layers.Rescaling :
+
+normalization_layer = tf.keras.layers.Rescaling(1./255)
+
+#
+# Configurar el conjunto de datos para el rendimiento
+# Asegurémonos de utilizar la captación previa almacenada en búfer para que pueda obtener datos del disco sin que la E/S se convierta en un bloqueo. Estos son dos métodos importantes que debe usar al cargar datos:
+#
+# Dataset.cache mantiene las imágenes en la memoria después de que se cargan fuera del disco durante la primera época. Esto asegurará que el conjunto de datos no se convierta en un cuello de botella mientras entrena su modelo. Si su conjunto de datos es demasiado grande para caber en la memoria, también puede usar este método para crear un caché en disco de alto rendimiento.
+# Dataset.prefetch superpone el preprocesamiento de datos y la ejecución del modelo durante el entrenamiento.
+
+AUTOTUNE = tf.data.AUTOTUNE
+
+train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+
+# Entrenamiento
+
+num_classes = 7
+
+model = tf.keras.Sequential([
+  tf.keras.layers.Rescaling(1./255),
+  tf.keras.layers.Conv2D(32, 3, activation='relu'),
+  tf.keras.layers.MaxPooling2D(),
+  tf.keras.layers.Conv2D(32, 3, activation='relu'),
+  tf.keras.layers.MaxPooling2D(),
+  tf.keras.layers.Conv2D(32, 3, activation='relu'),
+  tf.keras.layers.MaxPooling2D(),
+  tf.keras.layers.Flatten(),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dense(num_classes)
+])
+
+model.compile(
+  optimizer='adam',
+  loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+  metrics=['accuracy'])
+
+model.fit(
+  train_ds,
+  validation_data=val_ds,
+  epochs=50
+)
+
+model.save('IMAGE_CLASSIFIER_TEST.h5')
+
+# PRUEBA 1 CASO
+
+img = tf.keras.utils.load_img(
+     'E:/scripts_python/test_keras/clasificador/ANDE_39.jpg', target_size=(180, 180)
+ )
+img_array = tf.keras.utils.img_to_array(img)
+img_array = tf.expand_dims(img_array, 0) # Create a batch
+
+predictions = model.predict(img_array)
+score = tf.nn.softmax(predictions[0])
+
+print(
+     "Esta imagen pertenece a la categoria {} con un {:.2f} porcentaje de probabilidad."
+     .format(class_names[np.argmax(score)], 100 * np.max(score))
+)
